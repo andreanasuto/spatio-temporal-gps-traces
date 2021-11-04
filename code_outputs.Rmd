@@ -492,7 +492,6 @@ midday_dissolved_path = 'midday_dissolved.geojson'
 midday_dissolved = st_read(midday_dissolved_path)
 ```
 ```{r}
-legend_title = expression("midday Stable Community") # set title
 
 # get midday dissolved communities boundaries
 # midday_boundaries = tm_shape(midday_dissolved) + tm_borders(col = 'black', lwd = .5) 
