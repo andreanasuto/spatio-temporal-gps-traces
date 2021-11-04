@@ -1,1 +1,3 @@
-# spatio-temporal-gps-traces
+# Deriving Spatio-Temporal Geographies of Human Mobility from GPS traces
+*Code producing visualizations for the following paper*
+Abstract. This study leverages on the opportunities presented by individual-level GPS data to study human mobility within cities. It develops a methodology to understand the spatio-temporal properties of collective movements using network science. Through a spatially-weighted community detection approach, functional neighbourhoods derived from human mobility patterns are generated for different time intervals and a set of metrics computed to measure the extent to which they vary across time. The results show that while the overall city structure remains stable, functional neighbourhoods tend to contract and expand over the course of the day. This work sets up a methodology to detect short-term structural changes in cities based on human mobility. 
