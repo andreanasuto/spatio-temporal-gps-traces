@@ -1,0 +1,606 @@
+---
+title: "Deriving Spatio-Temporal Geographies from mobile GPS data"
+output: html_notebook
+---
+
+```{r}
+# import libraries
+library(sf)
+library(tidyverse)
+library(tidyjson)
+library(dplyr)
+library(sysfonts) # add Roboto font
+library(showtext) # make custom font work with ggplot
+library(kableExtra) # make table
+library(tmap) # mapping
+library(cartogram) # plotting
+```
+
+```{r}
+# read general dataframe
+general_df_path = 'data/general.gpkg'
+general_st <- st_read(general_df_path)
+# rename column
+general_st <- general_st %>% rename (
+  general = X3.0_1.0_nw0 
+) %>% mutate(
+  general = as.factor(general) # set general column as factor
+)
+# drop NAs
+general_st <- drop_na(general_st)
+# drop geometry
+general <- st_drop_geometry(general_st)
+# read day profiles dataframe and drop NAs
+days_df_path = 'data/day_profiles.gpkg'
+days <- st_read(days_df_path)
+# rename columns
+days <- days %>% rename(
+  morning = OctMorn_3.0_1.0_nw0,
+  midday = OctMidd_3.0_1.0_nw0,
+  afternoon = OctAfter_3.0_1.0_nw0,
+  evening = OctEven_3.0_1.0_nw0
+)
+# drop NAs
+days <- drop_na(days)
+
+# create spatial dataframes for each time of the day
+morning_st <- days %>% select(hex_id, morning, geom)
+midday_st <- days %>% select(hex_id, midday, geom)
+afternoon_st <- days %>% select(hex_id, afternoon, geom)
+evening_st <- days %>% select(hex_id, evening, geom)
+
+# set centroids
+morning_centroid <- st_centroid(morning_st)
+mid_centroid <- st_centroid(midday_st)
+afternoon_centroid <- st_centroid(afternoon_st)
+evening_centroid <- st_centroid(evening_st)
+
+# drop geometries
+morning <- st_drop_geometry(morning_st)
+midday <- st_drop_geometry(midday_st)
+afternoon <- st_drop_geometry(afternoon_st)
+evening <- st_drop_geometry(evening_st)
+```
+
+```{r message=FALSE, warning=FALSE}
+# spatial joint for morning
+morning_sf_joint <- st_join(general_st, morning_centroid, left = FALSE)
+morning_intersect <- st_drop_geometry(morning_sf_joint)
+
+# spatial joint for morning
+midday_sf_joint <- st_join(general_st, mid_centroid, left = FALSE)
+midday_intersect <- st_drop_geometry(midday_sf_joint)
+
+# spatial joint for morning
+afternoon_sf_joint <- st_join(general_st, afternoon_centroid, left = FALSE)
+afternoon_intersect <- st_drop_geometry(afternoon_sf_joint)
+
+# spatial joint for morning
+evening_sf_joint <- st_join(general_st, evening_centroid, left = FALSE)
+evening_intersect <- st_drop_geometry(evening_sf_joint)
+```
+
+# Get Table 1
+```{r}
+# calculate stable area
+# hexagon fixed area expressed in km squared
+hex_area <- 0.105
+```
+
+```{r message=FALSE, warning=FALSE}
+# calculate total hexagons by general community and area
+gen_tot <- general %>%
+  group_by(general) %>%
+  summarize(
+    hexs = n(),
+    area = hexs * hex_area
+  ) %>% mutate(
+    general = as.factor(general) # set general as factor
+  )
+
+# calculate total hexagons by morning community and area
+morning_tot <- morning_intersect %>%
+  group_by(morning) %>%
+  summarize(
+    hexs = n(),
+    area = hexs * hex_area
+  )
+
+# calculate total hexagons by mid day community and area
+mid_tot <- midday_intersect %>%
+  group_by(midday) %>%
+  summarize(
+    hexs = n(),
+    area = hexs * hex_area
+  )
+
+# calculate total hexagons by afternoon community and area
+afternoon_tot <- afternoon_intersect %>%
+  group_by(afternoon) %>%
+  summarize(
+    hexs = n(),
+    area = hexs * hex_area
+  )
+
+# calculate total hexagons by evening community
+evening_tot <- evening_intersect %>%
+  group_by(evening) %>%
+  summarize(
+    hexs = n(),
+    area = hexs * hex_area
+  )
+```
+
+```{r message=FALSE, warning=FALSE}
+# Morning
+# calculate total hexagons grouped by general community and morning community
+general_profile_morning <- morning_intersect %>% 
+  group_by(general, morning) %>%
+  summarize(
+    combined_hexs = n(), # get number of hexagons in each General Community
+  )
+
+# calculate multiple metrics grouped by general for the morning communities
+general_profile_morning_agg <- general_profile_morning %>%
+  group_by(general) %>%
+  summarize(
+    morning = morning, # get day profile community
+    combined_hexs = combined_hexs, # get combined hexagons for each day profile community
+    total = sum(combined_hexs), # get the total number of hexagons within a general community in a given day profile
+    percent = combined_hexs/total * 100, # calculate percentage of the hexagons in each day profile community over the total
+    morn_top = morning[which.max(percent)], # get morning community label that it is more stable
+    morn_stability = max(percent), # get highest percentage of the hexagons across day profile community i.e. stability level
+    morn_change = ifelse(is.na((100 - morn_stability)/(n() - 1)),0,(100 - morn_stability)/(n() - 1)), # get 'change' metric
+    morn_stable_area = morn_stability * total * hex_area, # get area of the most stable community in km2
+    morn_change_area = morn_change * total * hex_area # get areas of the least stable communities in km2
+  ) %>% mutate(
+    general = as.factor(general) # change general to a factor from integer
+  )
+
+#midday
+# calculate total hexagons grouped by general community and midday community
+general_profile_midday <- midday_intersect %>% 
+  group_by(general, midday) %>%
+  summarize(
+    combined_hexs = n(), # get number of hexagons in each General Community
+  )
+
+# same as for morning communities
+general_profile_midday_agg <- general_profile_midday %>%
+  group_by(general) %>%
+  summarize(
+    midday = midday,
+    combined_hexs = combined_hexs,
+    total = sum(combined_hexs),
+    percent = combined_hexs/total * 100,
+    mid_top = midday[which.max(percent)],
+    midday_stability = max(percent),
+    midday_change = ifelse(is.na((100 - midday_stability)/(n() - 1)),0,(100 - midday_stability)/(n() - 1)),
+    midday_stable_area = midday_stability * total * hex_area,
+    midday_change_area = midday_change * total * hex_area
+  ) %>% mutate(
+    general = as.factor(general)
+  )
+
+
+#afternoon
+# calculate total hexagons grouped by general community and afternoon community
+general_profile_afternoon <- afternoon_intersect %>% 
+  group_by(general, afternoon) %>%
+  summarize(
+    combined_hexs = n(), # get number of hexagons in each General Community
+  )
+
+# same as for morning communities
+general_profile_afternoon_agg <- general_profile_afternoon %>%
+  group_by(general) %>%
+  summarize(
+    afternoon = afternoon,
+    combined_hexs = combined_hexs,
+    total = sum(combined_hexs),
+    percent = combined_hexs/total * 100,
+    afternoon_top = afternoon[which.max(percent)], # get evening community more stable
+    afternoon_stability = max(percent),
+    afternoon_change = ifelse(is.na((100 - afternoon_stability)/(n() - 1)),0,(100 - afternoon_stability)/(n() - 1)),
+    afternoon_stable_area = afternoon_stability * total * hex_area,
+    afternoon_change_area = afternoon_change * total * hex_area
+  ) %>% mutate(
+    general = as.factor(general)
+  )
+
+# evening
+# calculate total hexagons grouped by general community and evening community
+general_profile_evening <- evening_intersect %>% 
+  group_by(general, evening) %>%
+  summarize(
+    combined_hexs = n(), # get number of hexagons in each General Community
+  )
+
+# same as for morning communities
+general_profile_evening_agg <- general_profile_evening %>%
+  group_by(general) %>%
+  summarize(
+    evening = evening,
+    combined_hexs = combined_hexs,
+    total = sum(combined_hexs),
+    percent = combined_hexs/total * 100,
+    evening_stability = max(percent),
+    evening_top = evening[which.max(percent)], # get evening community more stable
+    evening_change = ifelse(is.na((100 - evening_stability)/(n() - 1)),0,(100 - evening_stability)/(n() - 1)),
+    evening_stable_area = evening_stability * total * hex_area,
+    evening_change_area = evening_change * total * hex_area
+  ) %>% mutate(
+    general = as.factor(general)
+  )
+
+```
+
+
+```{r}
+# create metrics to display in the table
+df_to_table <- gen_tot %>% left_join(general_profile_morning_agg, by='general') %>%
+  left_join(general_profile_midday_agg, by = 'general') %>%
+  left_join(general_profile_afternoon_agg, by = 'general') %>%
+  left_join(general_profile_evening_agg, by = 'general') %>%
+  group_by(general, hexs) %>%
+  summarize(
+             morn_top = first(morn_top),
+             morn_stability = first(morn_stability),
+             morn_change = first(morn_change),
+             morn_stable_area = first(morn_stable_area),
+             morn_change_area = first(morn_change_area),
+             mid_top = first(mid_top),
+             mid_stability = first(midday_stability),
+             mid_change = first(midday_change),
+             mid_stable_area = first(midday_stable_area),
+             mid_change_area = first(midday_change_area),
+             afternoon_top = first(afternoon_top),
+             afternoon_stability = first(afternoon_stability),
+             afternoon_change = first(afternoon_change),
+             afternoon_stable_area = first(afternoon_stable_area),
+             afternoon_change_area = first(afternoon_change_area),
+             evening_top = first(evening_top),
+             evening_stability = first(evening_stability),
+             evening_change = first(evening_change),
+             evening_stable_area = first(evening_stable_area),
+             evening_change_area = first(evening_change_area),
+             )
+# drop NAs
+df_to_table <- drop_na(df_to_table)
+```
+```{r message=FALSE, warning=FALSE}
+# create type feature
+type <- c('General', 'Morning', 'Midday', 'Afternoon', 'Evening')
+
+# create average area feature
+average_area <- c(
+  mean(df_to_table$hexs * hex_area), # general
+  mean(morning_tot$area), # morning
+  mean(mid_tot$area), # midday
+  mean(afternoon_tot$area), # afternoon
+  mean(evening_tot$area) # evening
+)
+
+# calculate size of the communities
+num_of_communities <- c()
+num_of_communities <- append(num_of_communities, nrow(gen_tot)) # general communities
+
+morning_com <- morning_intersect %>% group_by(morning) %>% summarize(n_com = n())
+num_of_communities <- append(num_of_communities, last(morning_com$morning)) # morning communities
+
+midday_com <- midday %>% group_by(midday) %>% summarize(n_com = n())
+num_of_communities <-append(num_of_communities, last(midday_com$midday)) # midday communities
+
+afternoon_com <- afternoon %>% group_by(afternoon) %>% summarize(n_com = n())
+num_of_communities <- append(num_of_communities, last(afternoon_com$afternoon)) # afternoon communities
+
+evening_com <- evening %>% group_by(evening) %>% summarize(n_com = n())
+num_of_communities <- append(num_of_communities, last(evening_com$evening)) # evening communities
+
+# calculate averages for stability
+stability <- c(0,
+              mean(df_to_table$morn_stability),
+              mean(df_to_table$mid_stability),
+              mean(df_to_table$afternoon_stability),
+              mean(df_to_table$evening_stability)
+              )
+
+# standard dev
+stability_sd <- c(0,
+              sd(df_to_table$morn_stability),
+              sd(df_to_table$mid_stability),
+              sd(df_to_table$afternoon_stability),
+              sd(df_to_table$evening_stability)
+              )
+
+# calculate averages for change
+change <- c(0,
+              mean(df_to_table$morn_change, na.rm = TRUE),
+              mean(df_to_table$mid_change, na.rm = TRUE),
+              mean(df_to_table$afternoon_change, na.rm = TRUE),
+              mean(df_to_table$evening_change, na.rm = TRUE)
+              )
+
+# standard dev
+change_sd <- c(0,
+              sd(df_to_table$morn_change, na.rm = TRUE),
+              sd(df_to_table$mid_change, na.rm = TRUE),
+              sd(df_to_table$afternoon_change, na.rm = TRUE),
+              sd(df_to_table$evening_change, na.rm = TRUE)
+              )
+
+# calculate stable area
+stable_area <- c(0,
+                mean(df_to_table$morn_stable_area, na.rm = TRUE),
+                mean(df_to_table$mid_stable_area, na.rm = TRUE),
+                mean(df_to_table$afternoon_stable_area, na.rm = TRUE),
+                mean(df_to_table$evening_stable_area, na.rm = TRUE)
+                )
+
+# calculate stable area
+change_area <- c(0,
+                mean(df_to_table$morn_change_area, na.rm = TRUE),
+                mean(df_to_table$mid_change_area, na.rm = TRUE),
+                mean(df_to_table$afternoon_change_area, na.rm = TRUE),
+                mean(df_to_table$evening_change_area, na.rm = TRUE)
+                )
+```
+
+```{r}
+# create dataframe to transform in table
+table_df <- data.frame(type,
+                       num_of_communities,
+                       average_area,
+                       stability = format(stability, digits=3, big.mark = ','),
+                       stability_sd = format(stability_sd, digits=3, big.mark = ','),
+                       stable_area = format(stable_area, digits=3, big.mark = ','), 
+                       change = format(change, digits=3, big.mark = ','),
+                       change_sd = format(change_sd, digits=3, big.mark = ','),
+                       change_area = format(change_area, digits=3, big.mark = ',')
+                       )
+# replace zero value in 'general' row with a dash
+table_df[1,4:9] <- '-'
+```
+
+```{r}
+footnote_text = 
+  'The baseline to measure stability and change are the communities identified at the ‘General’ level. Each ‘General’ community is split in multiple communities across the day profiles. ’Area’ is the average area in km squared contained in the communities within a time of the day. ’Stability’ is the average of the percentage of hexagons assigned to largest day profile community within each baseline. ‘Stability (Standard Deviation)’ is the standard deviation of the ‘Stability’ variable. ’Stable Area’ is the average of total areas of the largest community expressed in km squared. ‘Change’ is the average of the percentage of hexagons assigned to the residual day profile communities within each baseline. Change (Standard Deviation)’ is the standard deviation of ‘Change’ variable.  ‘Change Area’ is the average of total areas of the residual communities expressed in km squared.'
+```
+
+```{r eval=FALSE, include=FALSE}
+# produce table
+table_df %>%
+  kbl(col.names = c('', 'Number of Communities', 'Area (km2)', 'Stability (%)', 'Stability (Std Dev)', 'Stable Area (km2)', 'Change (%)','Change (Std Dev)', 'Change Area (km2)'), digits = 2, format.args = list(big.mark = ",",
+  scientific = FALSE)) %>%
+  #footnote(general = footnote_text) %>%
+  kable_classic(full_width = F) %>%
+  save_kable('table_1.html', html_font = "Times New Roman")
+```
+
+
+# Figure 1 - Maps
+
+NYC boro map
+```{r}
+nyc_shape_path = 'data/nyc_borough_boundaries.geojson'
+# read map
+nyc <- st_read(nyc_shape_path)
+```
+
+```{r}
+# create map
+nyc_map = tm_shape(nyc) +
+  tm_text('boro_name', size = 0.8, fontfamily = 'Roboto Condensed') + # add text
+  tm_compass(type = "arrow", position = c("right", "bottom") , size = 2, text.size = 0.7) + # add compass
+  tm_layout(bg.color = "white", # change background colour
+            legend.position = c('center','bottom'),
+            legend.width = 0.9,
+            legend.title.size = 0.7,
+            frame = FALSE, # remove map frame
+            main.title = 'a.', # main title of the map
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            ) +
+  tm_borders()
+```
+
+Map General Communities
+```{r}
+# import dissolved layer from QGIS
+general_dissolved_path = 'general_dissolved.geojson'
+general_dissolved = st_read(general_dissolved_path)
+```
+```{r}
+# Map General Community
+legend_title = expression("General Community") # set title
+
+# create map
+general_boundaries = tm_shape(general_dissolved) + tm_borders(col = 'black', lwd = .5)
+
+# create map
+general_map_1 = tm_shape(general_st) +
+  tm_fill(col = '#d3d3d3') + # grey fill color
+  tm_layout(bg.color = "white",
+            inner.margins=c(0.2, 0.05, 0.05, 0.01),
+            legend.title.fontfamily = 'Roboto Condensed',
+            frame = FALSE,
+            main.title = 'b.',
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            ) # change background color
+  general_map = general_map_1 + general_boundaries + tm_shape(general_st) + # add region boundaries
+  tm_borders(col = "white", lwd = 0) # no borders
+  general_map
+```
+Map Morning Stable
+```{r}
+# get df with general, the most stable community with general communities as baseline
+morning_stable_df <- df_to_table %>% select(general,morn_top) %>% rename( morning = morn_top)
+# join the create dataframe with morning stable df
+morning_stable_st <- morning_st %>% left_join(morning_stable_df, by = 'morning')
+```
+
+```{r}
+# remove the NAs
+morning_stable_st <- morning_stable_st %>% filter(!is.na(general))
+```
+
+```{r eval=FALSE, include=FALSE}
+# import dissolved hexagons layer from QGIS
+morning_dissolved_path = 'qgis outputs/morning_dissolved.geojson'
+morn_dissolved = st_read(morning_dissoveld_path)
+```
+
+```{r}
+morning_map_1 = tm_shape(morning_stable_st) +
+  tm_fill(col = "#d3d3d3") + # grey color
+  tm_layout(bg.color = "white") # change background colour
+
+general_map_1 = tm_shape(general_st) +
+  tm_fill(col = 'yellow') + # add fill
+  tm_layout(bg.color = "white",
+            inner.margins=c(0.2, 0.05, 0.05, 0.01),
+            frame = FALSE,
+            main.title = 'c.',
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            )
+morning_map = general_map_1 + morning_map_1 + general_boundaries + tm_shape(morning_stable_st) + # add region boundaries
+  tm_borders(col = , lwd = 0)
+morning_map
+```
+
+Midday Map
+```{r}
+# # get df with general, the most stable community with general communities as baseline
+midday_stable_df <- df_to_table %>% select(general,mid_top) %>% rename( midday = mid_top)
+# join the create dataframe with midday stable df
+midday_stable_st <- midday_st %>% left_join(midday_stable_df, by = 'midday')
+```
+
+```{r}
+# remove the NAs
+midday_stable_st <- midday_stable_st %>% filter(!is.na(general))
+```
+
+```{r eval=FALSE, include=FALSE}
+# import dissolved layer from QGIS
+midday_dissolved_path = 'midday_dissolved.geojson'
+midday_dissolved = st_read(midday_dissolved_path)
+```
+```{r}
+legend_title = expression("midday Stable Community") # set title
+
+# get midday dissolved communities boundaries
+# midday_boundaries = tm_shape(midday_dissolved) + tm_borders(col = 'black', lwd = .5) 
+
+midday_map_1 = tm_shape(midday_stable_st) +
+  tm_fill(col = "#d3d3d3") # grey color +
+  tm_layout(bg.color = "white") 
+
+general_map_1 = tm_shape(general_st) +
+  tm_fill(col = 'yellow', title = legend_title, legend.is.portrait = FALSE) + # add fill
+  tm_layout(bg.color = "white",
+            inner.margins=c(0.2, 0.05, 0.05, 0.05),
+            frame = FALSE, # no frame
+            main.title = 'd.',
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            )
+midday_map = general_map_1 + midday_map_1 + general_boundaries + tm_shape(midday_stable_st) + # add region boundaries
+  tm_borders(col = , lwd = 0)
+midday_map
+```
+
+Afternoon Map
+```{r eval=FALSE, include=FALSE}
+# import dissolved layer from QGIS
+afternoon_dissolved = st_read('afternoon_dissolved.geojson')
+```
+
+```{r}
+# get df with general, the most stable community by general community and associated color by general community
+afternoon_stable_df <- df_to_table %>% select(general,afternoon_top) %>% rename( afternoon = afternoon_top)
+# join the create dataframe with afternoon stable df
+afternoon_stable_st <- afternoon_st %>% left_join(afternoon_stable_df, by = 'afternoon')
+```
+
+```{r}
+# create map
+afternoon_map_1 = tm_shape(afternoon_stable_st) +
+  tm_fill(col = "#d3d3d3") +  # grey color
+  tm_layout(bg.color = "white", # change background colour
+            legend.position = c('center','bottom'),
+            #legend.width = 0.9,
+            inner.margins=c(0.2, 0.05, 0.05, 0.05),
+            frame = FALSE,
+            main.title.fontfamily = 'Roboto Condensed'
+  ) +
+  tm_add_legend(type = 'symbol',col = c("#d3d3d3","yellow"),labels = c('Stable', 'Change'), is.portrait = FALSE, size = 0.6)
+
+general_map_1 = tm_shape(general_st) +
+  tm_fill(col = 'yellow', title = legend_title, legend.is.portrait = FALSE) + # add fill
+  tm_layout(bg.color = "white",
+            legend.position = c('center','bottom'),
+            legend.width = 0.8,
+            inner.margins=c(0.4, 0.05, 0.05, 0.01),
+            legend.title.size = 0.7,
+            legend.height = 0.28,
+            frame = FALSE,
+            main.title = 'e.',
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            )
+afternoon_map = general_map_1 + afternoon_map_1 + general_boundaries + tm_shape(afternoon_stable_st) +
+  tm_borders(col = , lwd = 0)
+afternoon_map
+```
+
+Evening Map
+```{r eval=FALSE, include=FALSE}
+# import dissolved layer from QGIS
+evening_dissolved_path = 'evening_dissolved.geojson'
+evening_dissolved = st_read(evening_dissolved_path)
+```
+
+```{r}
+# get df with general, the most stable community by general community and associated color by general community
+evening_stable_df <- df_to_table %>% select(general,evening_top) %>% rename( evening = evening_top)
+# join the create dataframe with evening stable df
+evening_stable_st <- evening_st %>% left_join(evening_stable_df, by = 'evening')
+```
+
+```{r}
+# create map
+evening_map_1 = tm_shape(evening_stable_st) +
+  tm_fill(col = "#d3d3d3", # grey color
+          ) +
+  tm_layout(bg.color = "white", # change background colour
+            inner.margins=c(0.2, 0.05, 0.05, 0.05),
+            frame = FALSE,
+  )  
+
+general_map_1 = tm_shape(general_st) +
+  tm_fill(col = 'yellow') + # add fill
+  tm_layout(bg.color = "white",
+            frame = FALSE,
+            main.title = 'f.',
+            main.title.position = 'left',
+            main.title.size = 0.7,
+            main.title.fontfamily = 'Roboto Condensed'
+            )
+evening_map = general_map_1 + evening_map_1 + general_boundaries + tm_shape(evening_stable_st) +
+  tm_borders(col = , lwd = 0) # no hexagon boundaries
+evening_map
+```
+
+Save Map
+```{r}
+figure_1 <- tmap_arrange(nyc_map, general_map, morning_map, midday_map, afternoon_map, evening_map)
+tmap_save(figure_1, dpi = 300, "figure_1.png")
+```
