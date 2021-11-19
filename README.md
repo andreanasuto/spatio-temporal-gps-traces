@@ -4,7 +4,7 @@ This study leverages on the opportunities presented by individual-level GPS data
 <br>
 <br>
 ![figure_1](https://user-images.githubusercontent.com/17129483/142650678-297b1335-faf5-47c3-98f7-1c5b5d813a99.png) <br>
-###### Figure 1. Maps of the communities at the general level and across day profiles. The map shows day profile community changes (yellow area) with respect to the general communities (boundaries). Map of the New York City boroughs (a), map of the general communities (b), morning communities (c), midday communities (d), afternoon communities (e) and evening communities (f).
+###### Figure 1. Maps of the neighbourhoods at the general level and across day profiles. The map shows day profile neighbourhood changes (yellow area) with respect to the general neighbourhoods (boundaries). Map of the New York City boroughs (a), map of the general neighbourhoods (b), morning neighbourhoods (c), midday neighbourhoods (d), afternoon neighbourhoods (e) and evening neighbourhoods (f).
 <br>
 <img width="1099" alt="table_1" src="https://user-images.githubusercontent.com/17129483/142651749-e490ec51-c85f-4ca4-8b45-c1f8a4437209.png">
 
